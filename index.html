@@ -3,29 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#141a46">
-  <meta name="description" content="Пиксельный текстовый квест-викторина: спаси десять бронзовых сусликов Красноярска от Крота Кромешника и узнай историю города.">
+  <meta name="theme-color" content="#1e1410">
+  <meta name="description" content="Пиксельный квест-викторина: спаси десять бронзовых сусликов Красноярска от Крота Кромешника и узнай историю города.">
   <title>Суслики Красного Яра</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 8' shape-rendering='crispEdges'%3E%3Crect width='8' height='8' fill='%23141a46'/%3E%3Crect x='2' y='2' width='4' height='5' fill='%23c8843c'/%3E%3Crect x='3' y='4' width='2' height='3' fill='%23f2c98f'/%3E%3Crect x='2' y='1' width='1' height='1' fill='%23c8843c'/%3E%3Crect x='5' y='1' width='1' height='1' fill='%23c8843c'/%3E%3Crect x='3' y='3' width='1' height='1' fill='%23000'/%3E%3Crect x='5' y='3' width='1' height='1' fill='%23000'/%3E%3C/svg%3E">
+  <link rel="icon" href="assets/sprites/nazar.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Tiny5&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <header class="topbar">
-    <button id="logo" class="logo" title="В главное меню">Суслики<br>Красного Яра</button>
-    <div id="wordbar" class="wordbar" aria-label="Спасённые буквы"></div>
-    <nav class="nav">
-      <button id="btn-map" class="btn small">Карта</button>
-      <button id="btn-album" class="btn small">Альбом</button>
-      <button id="btn-sound" class="btn small">♪ Звук</button>
-    </nav>
-  </header>
-  <main id="app" class="screen"></main>
+  <div class="console">
+    <header class="hud">
+      <button id="logo" class="logo" title="В главное меню">Суслики<br><span>Красного Яра</span></button>
+      <div id="wordbar" class="wordbar"></div>
+      <nav class="nav">
+        <button id="btn-map" class="icon-btn" title="Карта" aria-label="Карта"><i class="ic ic-map"></i></button>
+        <button id="btn-album" class="icon-btn" title="Альбом краеведа" aria-label="Альбом краеведа"><i class="ic ic-book"></i></button>
+        <button id="btn-sound" class="icon-btn" aria-label="Звук"><i class="ic ic-sound"></i></button>
+      </nav>
+    </header>
+    <main id="app" class="screen"><p class="loading">Загрузка…</p></main>
+  </div>
+  <div id="fade" aria-hidden="true"></div>
   <noscript>Для игры нужен JavaScript.</noscript>
-  <script src="js/sprites.js"></script>
-  <script src="js/scenes.js"></script>
   <script src="js/story.js"></script>
   <script src="js/game.js"></script>
 </body>
