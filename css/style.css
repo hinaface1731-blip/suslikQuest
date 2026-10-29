@@ -206,6 +206,7 @@ canvas { image-rendering: pixelated; image-rendering: crisp-edges; display: bloc
 .title .place, .map .place { display: none !important; }
 
 /* ---------- Карта ---------- */
+.map-img { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .pins { position: absolute; inset: 0; }
 .pin {
   position: absolute; transform: translate(-50%, -100%);
