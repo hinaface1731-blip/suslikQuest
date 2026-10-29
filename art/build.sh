@@ -6,4 +6,5 @@ PXL=${PXL:-"npx -y github:uilianks/pxl"}
 for f in sprites actors scenes; do $PXL build "$f.px.js" --no-preview; done
 mkdir -p ../assets/sprites ../assets/scenes
 cp out/sprites/*.png ../assets/sprites/
-cp out/scenes/*.png ../assets/scenes/
+# остальные фоны — присланные картинки, их готовит prep_backgrounds.py
+cp out/scenes/surikov.png out/scenes/map.png ../assets/scenes/
