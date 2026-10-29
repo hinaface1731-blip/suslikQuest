@@ -1,10 +1,10 @@
-// Персонажи. Референсы в ref/ — вырезанные из присланных артов спрайты (фон убран,
-// слегка сглажены медианным фильтром); здесь они переводятся в общую палитру игры.
+// Персонажи. Референсы в ref/ готовит prep_refs.py: вырезает сусликов из присланных
+// артов и уменьшает их, не теряя глаз; здесь они переводятся в общую палитру игры.
 include("palette.px.js")
 
 const S = {
-  kras: [56, 52], raya: [60, 32], afonya: [26, 56], strazh: [30, 58], nazar: [36, 58],
-  obrada: [38, 50], yar: [27, 60], suri: [48, 50], r: [28, 46], k: [29, 46],
+  kras: [60, 56], raya: [64, 34], afonya: [27, 60], strazh: [32, 62], nazar: [39, 62],
+  obrada: [41, 54], yar: [29, 64], suri: [50, 52], kr: [70, 54],
 }
 for (const [name, [w, h]] of Object.entries(S))
-  sprite(name, { w, h, selout: "k", crop: true }, image(`ref/${name}.png`, 0, 0, { w, h, alpha: 150, palette: "kKwWebBnNcCypPgGoOdrRmaAi" }))
+  sprite(name, { w, h, selout: "k", crop: true }, image(`ref/${name}.png`, 0, 0, { w, h, alpha: 128, palette: "kKwWebBnNcCypPgGoOdrRmaAi" }))

@@ -7,7 +7,7 @@ const SAVE_KEY = 'suslik-quest-v1';
 const BASE_LAMPS = 2;
 const RAYS_TO_WIN = 3;
 const BOSS_HP = 5;
-const CREW = ['kras', 'raya', 'afonya', 'strazh', 'nazar', 'obrada', 'yar', 'suri', 'r', 'k'];
+const CREW = ['kras', 'raya', 'afonya', 'strazh', 'nazar', 'obrada', 'yar', 'suri', 'kr'];
 
 // ---------- Сохранение ----------
 function freshSave() { return { done: {}, letters: Array(10).fill(false), finale: false, sound: true }; }
@@ -59,10 +59,9 @@ function loadArt() {
 
 // Живые детали поверх статичных фонов: блики на воде, мерцание звёзд, снег
 const SCENE_FX = {
-  title: { water: [130, 50], stars: 80 }, prologue: { stars: 70 }, embankment: { water: [86, 40] },
-  sunny: {}, yudin: {}, karaul: { stars: 40, water: [154, 26] }, cosmos: { stars: 100 },
-  sovmen: { water: [86, 38], gold: true }, yarygin: { water: [66, 38] }, surikov: { snow: 60 },
-  rezanov: { stars: 40 }, strelka: { stars: 80, water: [106, 30] }, map: {},
+  title: {}, prologue: {}, embankment: { water: [28, 52] }, sunny: {}, yudin: {}, karaul: {},
+  cosmos: {}, sovmen: {}, yarygin: { water: [76, 44] }, surikov: { snow: 60 }, rezanov: {},
+  strelka: { water: [52, 18] }, map: {},
 };
 
 // ---------- Рендер сцены ----------
@@ -235,14 +234,18 @@ function setPlace(title, sub) {
   $('b', p).textContent = title; $('span', p).textContent = sub || '';
 }
 
-function portrait(name, size) {
+// Портрет для рамки. half: 'left' | 'right' — только одна половина спрайта
+// (так из общей картинки молодожёнов получаются портреты «Р» и «К»).
+function portrait(name, size, half) {
   const c = document.createElement('canvas');
   size = size || 40;
   c.width = size; c.height = size; c.className = 'portrait-cv';
   const x = c.getContext('2d');
   x.imageSmoothingEnabled = false;
   const img = ART.sprites[name];
-  if (img) x.drawImage(img, Math.round((size - img.width) / 2), img.height <= size ? size - img.height : 2);
+  if (!img) return c;
+  const sw = half ? Math.ceil(img.width / 2) : img.width, sx = half === 'right' ? img.width - sw : 0;
+  x.drawImage(img, sx, 0, sw, img.height, Math.round((size - sw) / 2), img.height <= size ? size - img.height : 2, sw, img.height);
   return c;
 }
 
@@ -264,7 +267,7 @@ function runDialogue(panel, lines, done) {
     const sp = SPEAKERS[ln.who] || { name: '' };
     face.innerHTML = '';
     face.hidden = !sp.sprite && ln.who !== 'all';
-    if (sp.sprite) face.appendChild(portrait(sp.sprite));
+    if (sp.sprite) face.appendChild(portrait(sp.sprite, 40, sp.half));
     else if (ln.who === 'all') face.appendChild(portrait('nazar'));
     plate.textContent = sp.name; plate.hidden = !sp.name;
     dlg.className = 'dlg' + (ln.who === 'narrator' ? ' narr' : '') + (ln.who === 'mole' ? ' villain' : '');
@@ -390,8 +393,8 @@ function showTitle() {
       <h1><span class="l1">Суслики</span><span class="l2">Красного Яра</span></h1>
     </div>`), 'title');
   setScene({ bg: 'title', actors: [
-    { kind: 'suslik', name: 'nazar', x: 170, y: 160 }, { kind: 'suslik', name: 'r', x: 206, y: 160 },
-    { kind: 'suslik', name: 'k', x: 236, y: 160 }, { kind: 'suslik', name: 'yar', x: 272, y: 160 },
+    { kind: 'suslik', name: 'nazar', x: 168, y: 160 }, { kind: 'suslik', name: 'kr', x: 222, y: 160 },
+    { kind: 'suslik', name: 'yar', x: 278, y: 160 },
     { kind: 'soroka', x: 136, y: 46 },
   ] });
   const panel = $('#panel');
@@ -458,7 +461,7 @@ function showMap() {
         <div class="nameplate">${en.label.split('').join(' и ')}</div>
         <div class="info"><div class="face"></div><div class="info-body"><h3></h3><p class="addr"></p><p class="status"></p></div></div>
         <div class="map-actions">${progress}<button class="btn primary go"></button></div>`;
-      $('.face', panel).appendChild(portrait(l.who === 'k' ? 'r' : l.who));
+      $('.face', panel).appendChild(portrait(l.couple ? 'kr' : l.who, l.couple ? 72 : 40));
       $('h3', panel).textContent = l.title;
       $('.addr', panel).textContent = '📍 ' + l.address;
       $('.status', panel).textContent = en.done ? 'Суслик спасён. Можно пройти ещё раз.' : 'В плену у Кромешника!';
@@ -538,7 +541,8 @@ function startLevel(l) {
         setTimeout(() => cocoons.forEach(c => c.hop = false), 1600);
         mole.target = 0;
         view.flash = 0.8; view.flashCol = '255,250,210';
-        if (sus2) { sus.x = sp.together[1]; sus.flip = true; sus2.x = sp.together[0]; }
+        // молодожёны снова вместе: два кокона превращаются в одну пару
+        if (sus2) { sus.name = 'kr'; sus.x = sp.together[0]; sus.y = sp.together[1]; sus2.hidden = true; }
         l.letters.forEach(i => { save.letters[i] = true; });
         save.done[l.id] = true;
         persist(); renderWordbar();
@@ -582,13 +586,7 @@ function cardEl(l, open) {
       <p class="card-text"></p>
     </div>`;
   const art = $('.card-art', el);
-  if (l.couple) {
-    const c = portrait('r', 64), x = c.getContext('2d'), k = ART.sprites.k;
-    x.clearRect(0, 0, 64, 64);
-    x.drawImage(ART.sprites.r, 2, 64 - ART.sprites.r.height);
-    x.drawImage(k, 62 - k.width, 64 - k.height);
-    art.appendChild(c);
-  } else art.appendChild(portrait(l.who, 64));
+  art.appendChild(portrait(l.couple ? 'kr' : l.who, l.couple ? 72 : 64));
   $('.card-letter', el).textContent = open ? l.letters.map(i => WORD[i]).join(' и ') : '?';
   $('h3', el).textContent = l.title;
   $('.addr', el).textContent = '📍 ' + l.address;
@@ -624,8 +622,9 @@ function startFinale() {
   setPlace('Стрелка', 'Место основания Красноярска, 1628');
   const sp = FINALE.spots;
   const mole = { kind: 'mole', x: sp.mole[0], y: sp.mole[1], rise: 0, target: 0, scale: 2 };
-  const shore = ['afonya', 'strazh', 'nazar', 'yar', 'r', 'k'].map((name, i) => ({ kind: 'suslik', name, x: 16 + i * 22, y: 160 + (i % 2) * 6 }));
-  const cliff = ['kras', 'obrada', 'suri', 'raya'].map((name, i) => ({ kind: 'suslik', name, x: 196 + i * 34, y: 56 }));
+  const row = (names, x, y) => names.map(name => { const w = ART.sprites[name].width, a = { kind: 'suslik', name, x: x + w / 2, y }; x += w - 4; return a; });
+  const cliff = row(['kras', 'suri', 'raya'], 2, 126);
+  const shore = row(['afonya', 'strazh', 'nazar', 'obrada', 'yar', 'kr'], 0, 162);
   setScene({ bg: 'strelka', actors: [...cliff, mole, ...shore, { kind: 'soroka', x: sp.soroka[0], y: sp.soroka[1] }] });
   const intro = FINALE.intro.map(x => Object.assign({}, x));
   intro[1].on = () => { mole.target = 1; view.shake = 10; sfx.bad(); };
@@ -654,8 +653,8 @@ function startFinale() {
 function showEnding() {
   screen(windowHtml(), 'ending');
   setPlace('Красноярск', 'Город спасён!');
-  let x = 14;
-  const crew = CREW.map(name => { const w = ART.sprites[name].width; const a = { kind: 'suslik', name, x: x + w / 2 - 4, y: 170, hop: true }; x += w - 6; return a; });
+  let x = 4;
+  const crew = CREW.map(name => { const w = ART.sprites[name].width; const a = { kind: 'suslik', name, x: x + w / 2, y: 164, hop: true }; x += w - 14; return a; });
   setScene({ bg: 'title', actors: [...crew, { kind: 'soroka', x: 150, y: 50 }] });
   const panel = $('#panel');
   panel.className = 'box ending-box';
