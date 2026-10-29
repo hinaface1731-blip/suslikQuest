@@ -45,7 +45,7 @@ const sfx = {
 // ---------- Арт ----------
 const ART = { sprites: {}, scenes: {} };
 const SPRITE_NAMES = [...CREW, 'mole', 'soroka', 'cocoon_0', 'cocoon_1', 'cocoon_2', 'cocoon_3'];
-const SCENE_NAMES = ['title', 'prologue', 'embankment', 'sunny', 'yudin', 'karaul', 'cosmos', 'sovmen', 'yarygin', 'surikov', 'rezanov', 'strelka', 'map'];
+const SCENE_NAMES = ['title', 'prologue', 'embankment', 'sunny', 'yudin', 'karaul', 'cosmos', 'sovmen', 'yarygin', 'surikov', 'rezanov', 'strelka'];
 
 function loadImage(src) {
   return new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error(src)); i.src = src; });
@@ -54,14 +54,15 @@ function loadArt() {
   return Promise.all([
     ...SPRITE_NAMES.map(n => loadImage(`assets/sprites/${n}.png`).then(i => { ART.sprites[n] = i; })),
     ...SCENE_NAMES.map(n => loadImage(`assets/scenes/${n}.png`).then(i => { ART.scenes[n] = i; })),
+    loadImage('assets/map.webp'),
   ]);
 }
 
-// Живые детали поверх статичных фонов: блики на воде, мерцание звёзд, снег
+// Живые детали поверх статичных фонов: блики на воде
 const SCENE_FX = {
   title: {}, prologue: {}, embankment: { water: [28, 52] }, sunny: {}, yudin: {}, karaul: {},
-  cosmos: {}, sovmen: {}, yarygin: { water: [76, 44] }, surikov: { snow: 60 }, rezanov: {},
-  strelka: { water: [52, 18] }, map: {},
+  cosmos: {}, sovmen: {}, yarygin: { water: [76, 44] }, surikov: {}, rezanov: {},
+  strelka: { water: [52, 18] },
 };
 
 // ---------- Рендер сцены ----------
@@ -77,30 +78,13 @@ function setScene(scene) { view.scene = scene; view.sparks = []; }
 function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 
 function drawFx(c, fx, t) {
-  if (fx.stars) {
-    const r = rng(5);
-    for (let i = 0; i < 24; i++) {
-      const x = Math.floor(r() * W), y = Math.floor(r() * fx.stars), ph = r() * 6;
-      const a = Math.max(0, Math.sin(t / 500 + ph));
-      if (a > 0.6) { c.fillStyle = `rgba(255,250,220,${a.toFixed(2)})`; c.fillRect(x, y, 1, 1); if (a > 0.95) { c.fillRect(x - 1, y, 3, 1); c.fillRect(x, y - 1, 1, 3); } }
-    }
-  }
   if (fx.water) {
     const [y0, h] = fx.water, r = rng(3);
-    c.fillStyle = fx.gold ? 'rgba(255,240,190,0.75)' : 'rgba(230,245,255,0.6)';
+    c.fillStyle = 'rgba(230,245,255,0.6)';
     for (let i = 0; i < 18; i++) {
       const ly = y0 + 2 + Math.floor(r() * (h - 4)), len = 2 + Math.floor(r() * 4), sp = 30 + r() * 40;
       const x = (r() * W + t / sp) % (W + 10) - 5;
       if (Math.sin(t / 400 + i) > -0.3) c.fillRect(Math.round(x), ly, len, 1);
-    }
-  }
-  if (fx.snow) {
-    const r = rng(11);
-    c.fillStyle = '#ffffff';
-    for (let i = 0; i < fx.snow; i++) {
-      const x0 = r() * W, sp = 8 + r() * 12, ph = r() * 100;
-      const y = ((t / 1000) * sp + ph * 3) % H;
-      c.fillRect(Math.round((x0 + Math.sin(t / 900 + ph) * 4 + W) % W), Math.round(y), 1, 1);
     }
   }
 }
@@ -436,8 +420,9 @@ function levelLetters(l) { return l.letters.map(i => WORD[i]).join(''); }
 
 function showMap() {
   const allDone = LEVELS.every(l => save.done[l.id]);
-  screen(windowHtml('<div class="pins"></div>'), 'map');
-  setScene({ bg: 'map', actors: [] });
+  // карта — отдельная картинка в высоком разрешении, чтобы читались подписи
+  screen(windowHtml('<img class="map-img" src="assets/map.webp" alt="Карта Красноярска с достопримечательностями"><div class="pins"></div>'), 'map');
+  setScene(null);
   const pins = $('.pins'), panel = $('#panel');
   const entries = LEVELS.map(l => ({ l, map: l.map, label: levelLetters(l), done: !!save.done[l.id], start: () => startLevel(l) }));
   if (allDone) entries.unshift({ boss: true, map: FINALE.map, label: '!', done: save.finale, start: startFinale });
