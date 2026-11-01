@@ -155,6 +155,22 @@ test('Enter на кнопке верхней панели не листает д
   expect(await page.evaluate(() => save.sound)).toBe(true);
 });
 
+test('уменьшение движения: без вспышек и тряски даже при ответах', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await open(page, instant);
+  await startLevel(page, 'nazar');
+  // следим за эффектами на каждом кадре, пока даём верный и неверный ответ
+  await page.evaluate(() => {
+    window.__fx = 0;
+    const tick = () => { if (view.flash > 0 || view.shake > 0 || view.sparks.length) window.__fx++; requestAnimationFrame(tick); };
+    requestAnimationFrame(tick);
+  });
+  await answer(page, true);
+  await answer(page, false);
+  await page.waitForTimeout(300);
+  expect(await page.evaluate(() => window.__fx)).toBe(0);
+});
+
 test('уменьшение движения: текст сразу целиком', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await open(page);

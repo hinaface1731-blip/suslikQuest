@@ -166,8 +166,9 @@ function frame(t) {
       if (p.life > 0) { c.fillStyle = p.col; c.fillRect(Math.round(p.x), Math.round(p.y), p.life > 30 ? 2 : 1, p.life > 30 ? 2 : 1); }
     }
     view.sparks = view.sparks.filter(p => p.life > 0);
+    if (calm()) view.flash = 0;
     if (view.flash > 0) {
-      c.fillStyle = `rgba(${view.flashCol},${(calm() ? Math.min(view.flash, 0.12) : view.flash).toFixed(2)})`;
+      c.fillStyle = `rgba(${view.flashCol},${view.flash.toFixed(2)})`;
       c.fillRect(0, 0, W, H);
       view.flash = Math.max(0, view.flash - 0.04);
     }
