@@ -20,12 +20,18 @@
       <nav class="nav">
         <button id="btn-map" class="icon-btn" title="Карта" aria-label="Карта"><i class="ic ic-map"></i></button>
         <button id="btn-album" class="icon-btn" title="Альбом краеведа" aria-label="Альбом краеведа"><i class="ic ic-book"></i></button>
+        <button id="btn-text" class="icon-btn text-btn" aria-label="Мгновенный текст">Аа</button>
         <button id="btn-sound" class="icon-btn" aria-label="Звук"><i class="ic ic-sound"></i></button>
       </nav>
     </header>
-    <main id="app" class="screen"><p class="loading">Загрузка…</p></main>
+    <main id="app" class="screen" tabindex="-1"><p class="loading">Загрузка…</p></main>
   </div>
   <div id="fade" aria-hidden="true"></div>
+  <div id="sr" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  <dialog id="confirm" class="confirm" aria-labelledby="confirm-text">
+    <p id="confirm-text" class="confirm-text"></p>
+    <div class="menu-list row"><button class="opt primary"></button><button class="opt"></button></div>
+  </dialog>
   <noscript>Для игры нужен JavaScript.</noscript>
   <script src="js/story.js"></script>
   <script src="js/game.js"></script>
