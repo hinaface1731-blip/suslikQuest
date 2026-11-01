@@ -4,19 +4,47 @@
 const $ = (s, el) => (el || document).querySelector(s);
 const W = 320, H = 180;
 const SAVE_KEY = 'suslik-quest-v1';
+const SAVE_VERSION = 2;
 const BASE_LAMPS = 2;
 const RAYS_TO_WIN = 3;
 const BOSS_HP = 5;
-const CREW = ['kras', 'raya', 'afonya', 'strazh', 'nazar', 'obrada', 'yar', 'suri', 'r', 'k'];
+const CREW = ['kras', 'raya', 'afonya', 'strazh', 'nazar', 'obrada', 'yar', 'suri', 'kr'];
 
 // ---------- Сохранение ----------
-function freshSave() { return { done: {}, letters: Array(10).fill(false), finale: false, sound: true }; }
-let save = (() => {
-  try { return Object.assign(freshSave(), JSON.parse(localStorage.getItem(SAVE_KEY)) || {}); }
+// Сохраняются только пройденные локации, финал и настройки. Буквы слова
+// вычисляются из пройденных локаций, поэтому рассогласоваться не могут.
+function freshSave() { return { v: SAVE_VERSION, done: {}, finale: false, sound: true, instant: false }; }
+
+// Принимает что угодно из localStorage и возвращает корректное сохранение:
+// неизвестные локации и поля неверного типа отбрасываются.
+function sanitizeSave(raw) {
+  const s = freshSave();
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return s;
+  const done = raw.done;
+  if (done && typeof done === 'object' && !Array.isArray(done))
+    for (const l of LEVELS) if (done[l.id] === true) s.done[l.id] = true;
+  s.finale = raw.finale === true && LEVELS.every(l => s.done[l.id]);
+  if (typeof raw.sound === 'boolean') s.sound = raw.sound;
+  if (typeof raw.instant === 'boolean') s.instant = raw.instant;
+  return s;
+}
+function loadSave() {
+  try { return sanitizeSave(JSON.parse(localStorage.getItem(SAVE_KEY))); }
   catch (e) { return freshSave(); }
-})();
+}
+let save = loadSave();
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) { /* приватный режим */ } }
 const hasProgress = () => Object.keys(save.done).length > 0 || save.finale;
+const letterLit = i => LEVELS.some(l => save.done[l.id] && l.letters.includes(i));
+function progress() {
+  const done = LEVELS.filter(l => save.done[l.id]);
+  return { loc: done.length, locTotal: LEVELS.length, sus: done.reduce((n, l) => n + l.letters.length, 0), susTotal: WORD.length };
+}
+
+// Пользователь просит меньше движения: без тряски, вспышек, искр и прыжков,
+// текст выводится сразу.
+const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+const calm = () => reduceMotion.matches;
 
 // ---------- Звук (8-битные «пики» через WebAudio) ----------
 let audio = null;
@@ -45,7 +73,7 @@ const sfx = {
 // ---------- Арт ----------
 const ART = { sprites: {}, scenes: {} };
 const SPRITE_NAMES = [...CREW, 'mole', 'soroka', 'cocoon_0', 'cocoon_1', 'cocoon_2', 'cocoon_3'];
-const SCENE_NAMES = ['title', 'prologue', 'embankment', 'sunny', 'yudin', 'karaul', 'cosmos', 'sovmen', 'yarygin', 'surikov', 'rezanov', 'strelka', 'map'];
+const SCENE_NAMES = ['title', 'prologue', 'embankment', 'sunny', 'yudin', 'karaul', 'cosmos', 'sovmen', 'yarygin', 'surikov', 'rezanov', 'strelka'];
 
 function loadImage(src) {
   return new Promise((ok, fail) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => fail(new Error(src)); i.src = src; });
@@ -54,15 +82,15 @@ function loadArt() {
   return Promise.all([
     ...SPRITE_NAMES.map(n => loadImage(`assets/sprites/${n}.png`).then(i => { ART.sprites[n] = i; })),
     ...SCENE_NAMES.map(n => loadImage(`assets/scenes/${n}.png`).then(i => { ART.scenes[n] = i; })),
+    loadImage('assets/map.webp'),
   ]);
 }
 
-// Живые детали поверх статичных фонов: блики на воде, мерцание звёзд, снег
+// Живые детали поверх статичных фонов: блики на воде
 const SCENE_FX = {
-  title: { water: [130, 50], stars: 80 }, prologue: { stars: 70 }, embankment: { water: [86, 40] },
-  sunny: {}, yudin: {}, karaul: { stars: 40, water: [154, 26] }, cosmos: { stars: 100 },
-  sovmen: { water: [86, 38], gold: true }, yarygin: { water: [66, 38] }, surikov: { snow: 60 },
-  rezanov: { stars: 40 }, strelka: { stars: 80, water: [106, 30] }, map: {},
+  title: {}, prologue: {}, embankment: { water: [28, 52] }, sunny: {}, yudin: {}, karaul: {},
+  cosmos: {}, sovmen: {}, yarygin: { water: [76, 44] }, surikov: {}, rezanov: {},
+  strelka: { water: [52, 18] },
 };
 
 // ---------- Рендер сцены ----------
@@ -78,30 +106,13 @@ function setScene(scene) { view.scene = scene; view.sparks = []; }
 function rng(seed) { let s = seed >>> 0; return () => { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
 
 function drawFx(c, fx, t) {
-  if (fx.stars) {
-    const r = rng(5);
-    for (let i = 0; i < 24; i++) {
-      const x = Math.floor(r() * W), y = Math.floor(r() * fx.stars), ph = r() * 6;
-      const a = Math.max(0, Math.sin(t / 500 + ph));
-      if (a > 0.6) { c.fillStyle = `rgba(255,250,220,${a.toFixed(2)})`; c.fillRect(x, y, 1, 1); if (a > 0.95) { c.fillRect(x - 1, y, 3, 1); c.fillRect(x, y - 1, 1, 3); } }
-    }
-  }
-  if (fx.water) {
+  if (fx.water && !calm()) {
     const [y0, h] = fx.water, r = rng(3);
-    c.fillStyle = fx.gold ? 'rgba(255,240,190,0.75)' : 'rgba(230,245,255,0.6)';
+    c.fillStyle = 'rgba(230,245,255,0.6)';
     for (let i = 0; i < 18; i++) {
       const ly = y0 + 2 + Math.floor(r() * (h - 4)), len = 2 + Math.floor(r() * 4), sp = 30 + r() * 40;
       const x = (r() * W + t / sp) % (W + 10) - 5;
       if (Math.sin(t / 400 + i) > -0.3) c.fillRect(Math.round(x), ly, len, 1);
-    }
-  }
-  if (fx.snow) {
-    const r = rng(11);
-    c.fillStyle = '#ffffff';
-    for (let i = 0; i < fx.snow; i++) {
-      const x0 = r() * W, sp = 8 + r() * 12, ph = r() * 100;
-      const y = ((t / 1000) * sp + ph * 3) % H;
-      c.fillRect(Math.round((x0 + Math.sin(t / 900 + ph) * 4 + W) % W), Math.round(y), 1, 1);
     }
   }
 }
@@ -111,18 +122,18 @@ function drawActor(c, a, t) {
   if (a.kind === 'suslik') {
     if (a.cocoon) {
       const img = ART.sprites['cocoon_' + Math.min(3, a.cracks || 0)];
-      const wob = a.wobble ? Math.round(Math.sin(t / 50) * a.wobble) : 0;
+      const wob = a.wobble && !calm() ? Math.round(Math.sin(t / 50) * a.wobble) : 0;
       c.drawImage(img, Math.round(a.x - img.width / 2 + wob), Math.round(a.y - img.height));
     } else {
       const img = ART.sprites[a.name];
-      const hop = a.hop ? Math.round(Math.abs(Math.sin(t / 200 + a.x)) * 4) : 0;
+      const hop = a.hop && !calm() ? Math.round(Math.abs(Math.sin(t / 200 + a.x)) * 4) : 0;
       c.save();
       if (a.flip) { c.translate(Math.round(a.x), 0); c.scale(-1, 1); c.drawImage(img, Math.round(-img.width / 2), Math.round(a.y - img.height - hop)); }
       else c.drawImage(img, Math.round(a.x - img.width / 2), Math.round(a.y - img.height - hop));
       c.restore();
     }
   } else if (a.kind === 'mole') {
-    a.rise += ((a.target || 0) - a.rise) * 0.08;
+    a.rise = calm() ? (a.target || 0) : a.rise + ((a.target || 0) - a.rise) * 0.08;
     const img = ART.sprites.mole, s = a.scale || 1;
     const w = img.width * s, h = img.height * s;
     c.fillStyle = '#120c0a';
@@ -131,11 +142,11 @@ function drawActor(c, a, t) {
     c.fillRect(Math.round(a.x - w / 2 - 6), Math.round(a.y - 2), 6, 3 * s); c.fillRect(Math.round(a.x + w / 2), Math.round(a.y - 1), 7, 3 * s);
     const vis = Math.round(img.height * a.rise);
     if (vis > 0) {
-      const bob = Math.round(Math.sin(t / 300));
+      const bob = calm() ? 0 : Math.round(Math.sin(t / 300));
       c.drawImage(img, 0, 0, img.width, vis, Math.round(a.x - w / 2), Math.round(a.y - vis * s + bob + 2 * s), w, vis * s);
     }
   } else if (a.kind === 'soroka') {
-    const img = ART.sprites.soroka, bob = Math.round(Math.sin(t / 250) * 2);
+    const img = ART.sprites.soroka, bob = calm() ? 0 : Math.round(Math.sin(t / 250) * 2);
     c.drawImage(img, Math.round(a.x - img.width / 2), Math.round(a.y - img.height / 2 + bob));
   }
 }
@@ -144,6 +155,7 @@ function frame(t) {
   const c = view.ctx, sc = view.scene;
   if (c && sc && c.canvas.isConnected) {
     c.save();
+    if (calm()) view.shake = 0;
     if (view.shake > 0) { c.translate(Math.round((Math.random() - 0.5) * view.shake), 0); view.shake *= 0.85; if (view.shake < 0.5) view.shake = 0; }
     c.drawImage(ART.scenes[sc.bg], 0, 0);
     drawFx(c, SCENE_FX[sc.bg] || {}, t);
@@ -154,6 +166,7 @@ function frame(t) {
       if (p.life > 0) { c.fillStyle = p.col; c.fillRect(Math.round(p.x), Math.round(p.y), p.life > 30 ? 2 : 1, p.life > 30 ? 2 : 1); }
     }
     view.sparks = view.sparks.filter(p => p.life > 0);
+    if (calm()) view.flash = 0;
     if (view.flash > 0) {
       c.fillStyle = `rgba(${view.flashCol},${view.flash.toFixed(2)})`;
       c.fillRect(0, 0, W, H);
@@ -164,6 +177,7 @@ function frame(t) {
 }
 
 function burst(x, y, col, n) {
+  if (calm()) return;
   for (let i = 0; i < (n || 16); i++) {
     const a = Math.random() * Math.PI * 2, s = 0.5 + Math.random() * 1.6;
     view.sparks.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 0.8, life: 40 + Math.random() * 24, col });
@@ -179,12 +193,13 @@ function renderWordbar() {
   bar.innerHTML = '';
   [...WORD].forEach((ch, i) => {
     const s = document.createElement('span');
-    s.className = 'tile' + (save.letters[i] ? ' lit' : '');
-    s.textContent = save.letters[i] ? ch : '';
-    s.title = save.letters[i] ? `Буква «${ch}» спасена` : 'Буква ещё в плену';
+    const lit = letterLit(i);
+    s.className = 'tile' + (lit ? ' lit' : '');
+    s.textContent = lit ? ch : '';
+    s.title = lit ? `Буква «${ch}» спасена` : 'Буква ещё в плену';
     bar.appendChild(s);
   });
-  bar.setAttribute('aria-label', 'Спасённые буквы: ' + [...WORD].map((ch, i) => save.letters[i] ? ch : '_').join(' '));
+  bar.setAttribute('aria-label', 'Спасённые буквы: ' + [...WORD].map((ch, i) => letterLit(i) ? ch : '_').join(' '));
 }
 function updateSoundBtn() {
   const b = $('#btn-sound');
@@ -192,25 +207,97 @@ function updateSoundBtn() {
   b.setAttribute('aria-pressed', String(save.sound));
   b.title = save.sound ? 'Звук включён' : 'Звук выключен';
 }
+function updateTextBtn() {
+  const b = $('#btn-text');
+  b.setAttribute('aria-pressed', String(save.instant));
+  b.title = save.instant ? 'Текст появляется сразу' : 'Текст печатается по буквам';
+}
 $('#btn-sound').addEventListener('click', () => { save.sound = !save.sound; persist(); updateSoundBtn(); sfx.click(); });
-$('#btn-map').addEventListener('click', () => { sfx.click(); go(showMap); });
-$('#btn-album').addEventListener('click', () => { sfx.click(); go(showAlbum); });
-$('#logo').addEventListener('click', () => { sfx.click(); go(showTitle); });
+$('#btn-text').addEventListener('click', () => { save.instant = !save.instant; persist(); updateTextBtn(); sfx.click(); });
+$('#btn-map').addEventListener('click', () => { sfx.click(); leave(showMap); });
+$('#btn-album').addEventListener('click', () => { sfx.click(); leave(showAlbum); });
+$('#logo').addEventListener('click', () => { sfx.click(); leave(showTitle); });
 
+// Озвучка для скринридера: целая реплика или вопрос, а не печатающийся текст
+const sr = $('#sr');
+function announce(text) {
+  sr.textContent = '';
+  requestAnimationFrame(() => { sr.textContent = text; });
+}
+
+// Клавиши текущего экрана. Срабатывают, только когда фокус внутри игрового
+// окна (не в верхней панели и не в окне подтверждения). Enter и пробел на
+// кнопке оставляем браузеру: он сам нажмёт именно ту кнопку, что в фокусе.
 let keyHandler = null;
-document.addEventListener('keydown', e => { if (keyHandler && !e.altKey && !e.ctrlKey && !e.metaKey) keyHandler(e); });
+document.addEventListener('keydown', e => {
+  if (!keyHandler || busy || e.altKey || e.ctrlKey || e.metaKey) return;
+  const t = e.target;
+  if (t !== document.body && !app.contains(t)) return;
+  if ((e.key === 'Enter' || e.key === ' ') && t.closest && t.closest('button, a, input, select, textarea')) return;
+  keyHandler(e);
+});
 
-// Переход со «шторкой»
+// Таймеры экрана: отложенные действия и печать текста. При смене экрана
+// все они отменяются, а сработавший запоздало таймер ничего не делает.
+let screenId = 0;
+const timers = new Set();
+function later(fn, ms) {
+  const id = screenId;
+  const t = setTimeout(() => { timers.delete(t); if (id === screenId) fn(); }, ms);
+  timers.add(t);
+  return t;
+}
+function every(fn, ms) { const t = setInterval(fn, ms); timers.add(t); return t; }
+function stop(t) { clearTimeout(t); clearInterval(t); timers.delete(t); }
+
+// Незавершённая попытка: текст предупреждения при выходе, пока идёт уровень
+let guard = null;
+
+// Переход со «шторкой». Пока экран меняется, старый экран недоступен.
 let busy = false;
 function go(fn) {
   if (busy) return;
   busy = true;
+  keyHandler = null;
+  app.inert = true;
   fade.classList.add('on');
-  setTimeout(() => { fn(); fade.classList.remove('on'); busy = false; }, 260);
+  setTimeout(() => {
+    app.inert = false;
+    fn();
+    // фокус переходит в новый экран, а не остаётся на кнопке верхней панели
+    if (!app.contains(document.activeElement)) app.focus({ preventScroll: true });
+    fade.classList.remove('on');
+    busy = false;
+  }, calm() ? 0 : 260);
+}
+
+// Выход по кнопкам верхней панели: посреди уровня сначала спрашиваем
+async function leave(fn) {
+  if (busy) return;
+  if (guard && !(await confirmBox(guard, 'Выйти', 'Остаться'))) return;
+  go(fn);
+}
+
+function confirmBox(text, yes, no) {
+  return new Promise(resolve => {
+    const d = $('#confirm');
+    $('.confirm-text', d).textContent = text;
+    const [yesBtn, noBtn] = d.querySelectorAll('button');
+    yesBtn.textContent = yes; noBtn.textContent = no;
+    const done = v => { d.close(); resolve(v); };
+    yesBtn.onclick = () => { sfx.click(); done(true); };
+    noBtn.onclick = () => { sfx.click(); done(false); };
+    d.oncancel = e => { e.preventDefault(); done(false); };
+    d.showModal();
+    noBtn.focus();
+  });
 }
 
 function screen(html, cls) {
+  screenId++;
+  timers.forEach(stop);
   keyHandler = null;
+  guard = null;
   app.className = 'screen ' + (cls || '');
   app.innerHTML = html;
   window.scrollTo(0, 0);
@@ -235,14 +322,18 @@ function setPlace(title, sub) {
   $('b', p).textContent = title; $('span', p).textContent = sub || '';
 }
 
-function portrait(name, size) {
+// Портрет для рамки. half: 'left' | 'right' — только одна половина спрайта
+// (так из общей картинки молодожёнов получаются портреты «Р» и «К»).
+function portrait(name, size, half) {
   const c = document.createElement('canvas');
   size = size || 40;
   c.width = size; c.height = size; c.className = 'portrait-cv';
   const x = c.getContext('2d');
   x.imageSmoothingEnabled = false;
   const img = ART.sprites[name];
-  if (img) x.drawImage(img, Math.round((size - img.width) / 2), img.height <= size ? size - img.height : 2);
+  if (!img) return c;
+  const sw = half ? Math.ceil(img.width / 2) : img.width, sx = half === 'right' ? img.width - sw : 0;
+  x.drawImage(img, sx, 0, sw, img.height, Math.round((size - sw) / 2), img.height <= size ? size - img.height : 2, sw, img.height);
   return c;
 }
 
@@ -251,7 +342,7 @@ function runDialogue(panel, lines, done) {
   let i = 0, timer = null, full = '', shown = 0;
   panel.className = 'box';
   panel.innerHTML = `
-    <div class="dlg" role="group" aria-live="polite">
+    <div class="dlg" role="group" aria-label="Диалог">
       <div class="nameplate" hidden></div>
       <div class="face" hidden></div>
       <p class="txt"></p>
@@ -264,26 +355,29 @@ function runDialogue(panel, lines, done) {
     const sp = SPEAKERS[ln.who] || { name: '' };
     face.innerHTML = '';
     face.hidden = !sp.sprite && ln.who !== 'all';
-    if (sp.sprite) face.appendChild(portrait(sp.sprite));
+    if (sp.sprite) face.appendChild(portrait(sp.sprite, 40, sp.half));
     else if (ln.who === 'all') face.appendChild(portrait('nazar'));
     plate.textContent = sp.name; plate.hidden = !sp.name;
     dlg.className = 'dlg' + (ln.who === 'narrator' ? ' narr' : '') + (ln.who === 'mole' ? ' villain' : '');
     full = ln.text; shown = 0; txt.textContent = '';
     more.classList.remove('ready');
+    announce(sp.name ? `${sp.name}: ${full}` : full);
     if (ln.on) ln.on();
-    clearInterval(timer);
-    timer = setInterval(() => {
+    stop(timer);
+    if (save.instant || calm()) { finish(); return; }
+    timer = every(() => {
       shown = Math.min(full.length, shown + 2);
       txt.textContent = full.slice(0, shown);
       if (shown % 6 === 0) sfx.blip();
-      if (shown >= full.length) { clearInterval(timer); more.classList.add('ready'); }
+      if (shown >= full.length) finish();
     }, 22);
   }
+  function finish() { stop(timer); shown = full.length; txt.textContent = full; more.classList.add('ready'); }
   function next() {
-    if (shown < full.length) { clearInterval(timer); shown = full.length; txt.textContent = full; more.classList.add('ready'); return; }
+    if (shown < full.length) { finish(); return; }
     sfx.click();
     i++;
-    if (i >= lines.length) { clearInterval(timer); keyHandler = null; done(); return; }
+    if (i >= lines.length) { stop(timer); keyHandler = null; done(); return; }
     show();
   }
   dlg.addEventListener('click', next);
@@ -339,6 +433,7 @@ function runQuiz(o) {
       <p class="qtext"></p>
       <div class="answers"></div>`;
     $('.qtext', o.panel).textContent = q.q;
+    announce(`Вопрос ${qi + 1}. ${q.q}`);
     const box = $('.answers', o.panel);
     let answered = false;
     answers.forEach((ans, n) => {
@@ -353,7 +448,7 @@ function runQuiz(o) {
         if (ans.ok) { correct++; sfx.good(); o.onCorrect(correct); }
         else { lamps--; b.classList.add('wrong'); sfx.bad(); o.onWrong(lamps); }
         hud();
-        setTimeout(() => showFact(ans.ok, q), 700);
+        later(() => showFact(ans.ok, q), 700);
       });
       box.appendChild(b);
     });
@@ -368,6 +463,7 @@ function runQuiz(o) {
       <p class="txt"></p>
       <button class="btn primary next"></button>`;
     $('.txt', o.panel).textContent = q.fact;
+    announce(`${ok ? 'Верно!' : 'Мимо!'} ${q.fact}`);
     const nextBtn = $('.next', o.panel);
     nextBtn.textContent = correct >= o.goal ? 'Свет пробился! ▶' : lamps <= 0 ? 'Ой... ▶' : 'Следующий вопрос ▶';
     nextBtn.addEventListener('click', () => {
@@ -390,8 +486,8 @@ function showTitle() {
       <h1><span class="l1">Суслики</span><span class="l2">Красного Яра</span></h1>
     </div>`), 'title');
   setScene({ bg: 'title', actors: [
-    { kind: 'suslik', name: 'nazar', x: 170, y: 160 }, { kind: 'suslik', name: 'r', x: 206, y: 160 },
-    { kind: 'suslik', name: 'k', x: 236, y: 160 }, { kind: 'suslik', name: 'yar', x: 272, y: 160 },
+    { kind: 'suslik', name: 'nazar', x: 168, y: 160 }, { kind: 'suslik', name: 'kr', x: 222, y: 160 },
+    { kind: 'suslik', name: 'yar', x: 278, y: 160 },
     { kind: 'soroka', x: 136, y: 46 },
   ] });
   const panel = $('#panel');
@@ -406,10 +502,11 @@ function showTitle() {
     </div>`;
   const cont = $('#t-cont');
   if (cont) cont.addEventListener('click', () => { sfx.click(); go(showMap); });
-  $('#t-new').addEventListener('click', () => {
-    if (hasProgress() && !confirm('Начать заново? Весь прогресс будет сброшен.')) return;
-    const snd = save.sound; save = freshSave(); save.sound = snd; persist(); renderWordbar();
-    sfx.click(); go(showPrologue);
+  $('#t-new').addEventListener('click', async () => {
+    sfx.click();
+    if (hasProgress() && !(await confirmBox('Начать заново? Весь прогресс будет сброшен.', 'Начать заново', 'Отмена'))) return;
+    save = Object.assign(freshSave(), { sound: save.sound, instant: save.instant }); persist(); renderWordbar();
+    go(showPrologue);
   });
   $('#t-album').addEventListener('click', () => { sfx.click(); go(showAlbum); });
   $('#t-about').addEventListener('click', () => { sfx.click(); go(showAbout); });
@@ -433,8 +530,9 @@ function levelLetters(l) { return l.letters.map(i => WORD[i]).join(''); }
 
 function showMap() {
   const allDone = LEVELS.every(l => save.done[l.id]);
-  screen(windowHtml('<div class="pins"></div>'), 'map');
-  setScene({ bg: 'map', actors: [] });
+  // карта — отдельная картинка в высоком разрешении, чтобы читались подписи
+  screen(windowHtml('<img class="map-img" src="assets/map.webp" alt="Карта Красноярска с достопримечательностями"><div class="pins"></div>'), 'map');
+  setScene(null);
   const pins = $('.pins'), panel = $('#panel');
   const entries = LEVELS.map(l => ({ l, map: l.map, label: levelLetters(l), done: !!save.done[l.id], start: () => startLevel(l) }));
   if (allDone) entries.unshift({ boss: true, map: FINALE.map, label: '!', done: save.finale, start: startFinale });
@@ -444,21 +542,22 @@ function showMap() {
     selected = en;
     [...pins.children].forEach(p => p.classList.toggle('sel', p._en === en));
     panel.className = 'box map-info';
-    const left = LEVELS.filter(l => !save.done[l.id]).length;
-    const progress = `<p class="hint progress">${allDone ? (save.finale ? 'Город спасён! Любую локацию можно пройти ещё раз.' : 'Все буквы собраны — скорее на Стрелку!') : `Спасено ${LEVELS.length - left} из ${LEVELS.length}. Выбери метку на карте — порядок любой.`}</p>`;
+    const p = progress();
+    const counts = `Локации: ${p.loc}/${p.locTotal} · Суслики: ${p.sus}/${p.susTotal}`;
+    const progressHtml = `<p class="hint progress">${counts}. ${allDone ? (save.finale ? 'Город спасён! Любую локацию можно пройти ещё раз.' : 'Все буквы собраны — скорее на Стрелку!') : 'Выбери метку на карте — порядок любой.'}</p>`;
     if (en.boss) {
       panel.innerHTML = `
         <div class="nameplate">Финал</div>
         <div class="info"><div class="info-body"><h3>Битва на Стрелке</h3><p class="addr">Место основания Красноярска, 1628 год</p>
         <p>Все суслики свободны! Кромешник ждёт там, где Кача впадает в Енисей.</p></div></div>
-        <div class="map-actions">${progress}<button class="btn primary go">В бой ▶</button></div>`;
+        <div class="map-actions">${progressHtml}<button class="btn primary go">В бой ▶</button></div>`;
     } else {
       const l = en.l;
       panel.innerHTML = `
         <div class="nameplate">${en.label.split('').join(' и ')}</div>
         <div class="info"><div class="face"></div><div class="info-body"><h3></h3><p class="addr"></p><p class="status"></p></div></div>
-        <div class="map-actions">${progress}<button class="btn primary go"></button></div>`;
-      $('.face', panel).appendChild(portrait(l.who === 'k' ? 'r' : l.who));
+        <div class="map-actions">${progressHtml}<button class="btn primary go"></button></div>`;
+      $('.face', panel).appendChild(portrait(l.couple ? 'kr' : l.who, l.couple ? 72 : 40));
       $('h3', panel).textContent = l.title;
       $('.addr', panel).textContent = '📍 ' + l.address;
       $('.status', panel).textContent = en.done ? 'Суслик спасён. Можно пройти ещё раз.' : 'В плену у Кромешника!';
@@ -480,7 +579,7 @@ function showMap() {
     pin.addEventListener('click', () => { sfx.click(); if (selected === en) go(en.start); else select(en, true); });
     pins.appendChild(pin);
   }
-  select(entries.find(e => !e.done) || entries[0], false);
+  select(entries.find(e => !e.done) || entries[0], true);
   keyHandler = e => {
     if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
     e.preventDefault();
@@ -501,8 +600,9 @@ function startLevel(l) {
   const sor = { kind: 'soroka', x: sp.soroka[0], y: sp.soroka[1] };
   actors.push(mole, sor);
   setScene({ bg: l.scene, actors });
+  guard = 'Прогресс этой локации будет потерян: её придётся пройти заново.';
   const cocoons = sus2 ? [sus, sus2] : [sus];
-  const wobble = () => { cocoons.forEach(c => c.wobble = 1); setTimeout(() => cocoons.forEach(c => c.wobble = 0), 900); };
+  const wobble = () => { cocoons.forEach(c => c.wobble = 1); later(() => cocoons.forEach(c => c.wobble = 0), 900); };
 
   const intro = l.intro.map(x => Object.assign({}, x));
   intro.forEach(ln => {
@@ -530,19 +630,20 @@ function startLevel(l) {
       onWrong: () => {
         view.shake = 6; view.flash = 0.35; view.flashCol = '30,10,40';
         mole.target = 1;
-        cocoons.forEach(c => { c.wobble = 2; setTimeout(() => c.wobble = 0, 600); });
+        cocoons.forEach(c => { c.wobble = 2; later(() => c.wobble = 0, 600); });
       },
       win: () => {
         sfx.win();
         cocoons.forEach(c => { c.cocoon = false; c.hop = true; burst(c.x, c.y - 24, '#fbf3df', 34); });
-        setTimeout(() => cocoons.forEach(c => c.hop = false), 1600);
+        later(() => cocoons.forEach(c => c.hop = false), 1600);
         mole.target = 0;
         view.flash = 0.8; view.flashCol = '255,250,210';
-        if (sus2) { sus.x = sp.together[1]; sus.flip = true; sus2.x = sp.together[0]; }
-        l.letters.forEach(i => { save.letters[i] = true; });
+        // молодожёны снова вместе: два кокона превращаются в одну пару
+        if (sus2) { sus.name = 'kr'; sus.x = sp.together[0]; sus.y = sp.together[1]; sus2.hidden = true; }
+        guard = null;
         save.done[l.id] = true;
         persist(); renderWordbar();
-        const bar = $('#wordbar'); bar.classList.add('pulse'); setTimeout(() => bar.classList.remove('pulse'), 1300);
+        const bar = $('#wordbar'); bar.classList.add('pulse'); later(() => bar.classList.remove('pulse'), 1300);
         runDialogue(panel, l.rescue, () => showCard(l));
       },
       fail: () => showFail(panel, () => go(() => startLevel(l))),
@@ -551,7 +652,9 @@ function startLevel(l) {
 }
 
 function showFail(panel, retry) {
+  guard = null;
   sfx.lose();
+  announce('Кромешник победил: фонарики погасли. Можно попробовать снова.');
   view.shake = 8;
   panel.className = 'box';
   panel.innerHTML = `
@@ -582,13 +685,7 @@ function cardEl(l, open) {
       <p class="card-text"></p>
     </div>`;
   const art = $('.card-art', el);
-  if (l.couple) {
-    const c = portrait('r', 64), x = c.getContext('2d'), k = ART.sprites.k;
-    x.clearRect(0, 0, 64, 64);
-    x.drawImage(ART.sprites.r, 2, 64 - ART.sprites.r.height);
-    x.drawImage(k, 62 - k.width, 64 - k.height);
-    art.appendChild(c);
-  } else art.appendChild(portrait(l.who, 64));
+  art.appendChild(portrait(l.couple ? 'kr' : l.who, l.couple ? 72 : 64));
   $('.card-letter', el).textContent = open ? l.letters.map(i => WORD[i]).join(' и ') : '?';
   $('h3', el).textContent = l.title;
   $('.addr', el).textContent = '📍 ' + l.address;
@@ -598,12 +695,13 @@ function cardEl(l, open) {
 
 function showCard(l) {
   const panel = $('#panel');
-  const left = LEVELS.filter(x => !save.done[x.id]).length;
+  const p = progress(), left = p.locTotal - p.loc, leftSus = p.susTotal - p.sus;
+  announce(`Новая карточка в альбоме: ${l.title}`);
   panel.className = 'box card-box';
   panel.innerHTML = `
     <div class="nameplate">Новая карточка в альбоме</div>
     <div class="card-slot"></div>
-    <p class="hint">${left ? `Осталось спасти: ${left} ${plural(left, 'локация', 'локации', 'локаций')}.` : 'Все суслики на свободе! Кромешник ждёт тебя на Стрелке.'}</p>
+    <p class="hint">${left ? `Осталось: ${left} ${plural(left, 'локация', 'локации', 'локаций')}, ${leftSus} ${plural(leftSus, 'суслик', 'суслика', 'сусликов')} в плену.` : 'Все суслики на свободе! Кромешник ждёт тебя на Стрелке.'}</p>
     <button class="btn primary next">На карту ▶</button>`;
   $('.card-slot', panel).appendChild(cardEl(l, true));
   const b = $('.next', panel);
@@ -624,12 +722,14 @@ function startFinale() {
   setPlace('Стрелка', 'Место основания Красноярска, 1628');
   const sp = FINALE.spots;
   const mole = { kind: 'mole', x: sp.mole[0], y: sp.mole[1], rise: 0, target: 0, scale: 2 };
-  const shore = ['afonya', 'strazh', 'nazar', 'yar', 'r', 'k'].map((name, i) => ({ kind: 'suslik', name, x: 16 + i * 22, y: 160 + (i % 2) * 6 }));
-  const cliff = ['kras', 'obrada', 'suri', 'raya'].map((name, i) => ({ kind: 'suslik', name, x: 196 + i * 34, y: 56 }));
+  const row = (names, x, y) => names.map(name => { const w = ART.sprites[name].width, a = { kind: 'suslik', name, x: x + w / 2, y }; x += w - 4; return a; });
+  const cliff = row(['kras', 'suri', 'raya'], 2, 126);
+  const shore = row(['afonya', 'strazh', 'nazar', 'obrada', 'yar', 'kr'], 0, 162);
   setScene({ bg: 'strelka', actors: [...cliff, mole, ...shore, { kind: 'soroka', x: sp.soroka[0], y: sp.soroka[1] }] });
+  guard = 'Финальная битва начнётся заново.';
   const intro = FINALE.intro.map(x => Object.assign({}, x));
   intro[1].on = () => { mole.target = 1; view.shake = 10; sfx.bad(); };
-  intro[3].on = () => [...shore, ...cliff].forEach(a => { a.hop = true; setTimeout(() => a.hop = false, 1200); });
+  intro[3].on = () => [...shore, ...cliff].forEach(a => { a.hop = true; later(() => a.hop = false, 1200); });
   const panel = $('#panel');
   runDialogue(panel, intro, () => {
     runQuiz({
@@ -638,9 +738,10 @@ function startFinale() {
       onWrong: () => { view.shake = 8; view.flash = 0.4; view.flashCol = '30,10,40'; },
       win: () => {
         sfx.win();
+        guard = null;
         save.finale = true; persist();
         view.flash = 1; view.flashCol = '255,250,210';
-        for (let i = 0; i < 8; i++) setTimeout(() => burst(30 + Math.random() * 260, 20 + Math.random() * 60, ['#e5e1ba', '#d7c169', '#c66447'][i % 3], 28), i * 220);
+        for (let i = 0; i < 8; i++) later(() => burst(30 + Math.random() * 260, 20 + Math.random() * 60, ['#e5e1ba', '#d7c169', '#c66447'][i % 3], 28), i * 220);
         [...shore, ...cliff].forEach(a => a.hop = true);
         const end = FINALE.ending.map(x => Object.assign({}, x));
         end[1].on = () => { mole.target = 0.7; [...shore, ...cliff].forEach(a => a.hop = false); };
@@ -654,8 +755,8 @@ function startFinale() {
 function showEnding() {
   screen(windowHtml(), 'ending');
   setPlace('Красноярск', 'Город спасён!');
-  let x = 14;
-  const crew = CREW.map(name => { const w = ART.sprites[name].width; const a = { kind: 'suslik', name, x: x + w / 2 - 4, y: 170, hop: true }; x += w - 6; return a; });
+  let x = 4;
+  const crew = CREW.map(name => { const w = ART.sprites[name].width; const a = { kind: 'suslik', name, x: x + w / 2, y: 164, hop: true }; x += w - 14; return a; });
   setScene({ bg: 'title', actors: [...crew, { kind: 'soroka', x: 150, y: 50 }] });
   const panel = $('#panel');
   panel.className = 'box ending-box';
@@ -678,7 +779,7 @@ function showAlbum() {
     <section class="book">
       <header class="book-head">
         <h2>Альбом краеведа</h2>
-        <p>Открыто карточек: <b>${n}</b> из ${LEVELS.length}. На каждой — настоящий адрес, где в Красноярске стоит бронзовый суслик.</p>
+        <p>Открыто карточек: <b>${n}</b> из ${LEVELS.length}, спасено сусликов: <b>${progress().sus}</b> из ${WORD.length}. На каждой карточке — настоящий адрес, где в Красноярске стоит бронзовый суслик.</p>
       </header>
       <div class="cards"></div>
       <div class="menu-list row"><button class="opt primary" id="a-map"><span class="key">▶</span>На карту</button></div>
@@ -701,7 +802,9 @@ function showAbout() {
         <li>Ошибка гасит фонарик. Погасли все — пробуй снова (вопросы перемешаются).</li>
         <li>Собери слово КРАСНОЯРСК и победи Крота Кромешника на Стрелке.</li>
       </ul>
-      <p>Управление: мышь или касание; на клавиатуре — цифры 1–4, Enter и стрелки на карте.</p>
+      <p>Управление: мышь или касание. С клавиатуры: Tab — по кнопкам, Enter или пробел — нажать, цифры 1–4 — вариант ответа, стрелки — метки на карте.</p>
+      <p>Кнопка «Аа» вверху выводит текст сразу, без печати по буквам. Если в системе включено уменьшение движения, игра убирает тряску и вспышки.</p>
+      <p>Сохраняются пройденные локации. Если выйти посреди уровня, его придётся начать заново.</p>
       <h3>Десять сусликов</h3>
       <p>Крас, Рая, Афоня, Страж, Назар, Обрада, Яр, Р, Сури, К — первые буквы их имён складываются в слово КРАСНОЯРСК.</p>
       <div class="menu-list row"><button class="opt primary" id="ab-back"><span class="key">▶</span>Назад</button></div>
@@ -712,6 +815,7 @@ function showAbout() {
 // ---------- Старт ----------
 renderWordbar();
 updateSoundBtn();
+updateTextBtn();
 loadArt().then(() => {
   requestAnimationFrame(frame);
   showTitle();
