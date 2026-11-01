@@ -7,4 +7,4 @@ const S = {
   obrada: [41, 54], yar: [29, 64], suri: [50, 52], kr: [70, 54],
 }
 for (const [name, [w, h]] of Object.entries(S))
-  sprite(name, { w, h, selout: "k", crop: true }, image(`ref/${name}.png`, 0, 0, { w, h, alpha: 128, palette: "kKwWebBnNcCypPgGoOdrRmaAi" }))
+  sprite(name, { w, h, selout: "k", crop: true }, image(`ref/${name}.png`, 0, 0, { w, h, alpha: 128, palette: "KwWbBnNcCypPgGoOdrRmaAi" }))

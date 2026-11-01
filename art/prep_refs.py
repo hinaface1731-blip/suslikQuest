@@ -26,6 +26,9 @@ CUTS = {
 }
 
 
+BG = np.array([253, 247, 231]) / 255   # кремовый фон присланных картинок
+
+
 def cut(img, box):
     im = img.crop(box)
     a = np.asarray(im).astype(float) / 255
@@ -35,7 +38,13 @@ def cut(img, box):
     core = (lum < 0.80) | ((sat > 0.30) & (lum < 0.93))
     core = ndimage.binary_opening(core, iterations=1)
     core = ndimage.binary_closing(core, iterations=3)
-    core = ndimage.binary_fill_holes(core)
+    # дырки внутри фигуры заливаем, но не те, что на деле фон между деталями
+    # (например, между мачтой, парусом и крокодилом у Краса)
+    holes, n = ndimage.label(ndimage.binary_fill_holes(core) & ~core)
+    for k in range(1, n + 1):
+        region = holes == k
+        if np.abs(a[region] - BG).sum(1).mean() > 0.12:
+            core |= region
     lab, n = ndimage.label(core)
     sizes = ndimage.sum(core, lab, range(1, n + 1))
     keep = np.isin(lab, [k + 1 for k, s in enumerate(sizes) if s > 0.02 * sizes.max()])
@@ -45,6 +54,9 @@ def cut(img, box):
 
 
 def shrink(rgb, mask, h):
+    """Уменьшение по клеткам. В верхней части фигуры (голова) тёмные пиксели
+    глаз и носа сохраняются, но смешиваются с окружающей шерстью, чтобы не
+    превращаться в чёрные дыры; ниже (лапы) берётся обычная медиана."""
     H, W = mask.shape
     w = round(W * h / H)
     out = np.zeros((h, w, 4), np.uint8)
@@ -58,8 +70,9 @@ def shrink(rgb, mask, h):
                 continue
             px, lm = rgb[ys, xs][m], lum[ys, xs][m]
             dark = lm < 0.2
-            # глаза и нос — несколько тёмных пикселей в клетке: сохраняем их
-            col = px[dark].mean(0) if dark.mean() > 0.12 else np.median(px, 0)
+            col = np.median(px, 0)
+            if ty < h * 0.45 and dark.mean() > 0.12:
+                col = 0.6 * px[dark].mean(0) + 0.4 * col
             out[ty, tx, :3] = (col * 255).round()
             out[ty, tx, 3] = 255
     return Image.fromarray(out, 'RGBA')
